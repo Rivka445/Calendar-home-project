@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./calendar_project/python-project/io_comp"
+    ]
+}
