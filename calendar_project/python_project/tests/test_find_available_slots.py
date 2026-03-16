@@ -95,11 +95,34 @@ class TestCalendarApp(unittest.TestCase):
             if " - " in slot:
                 start, end = slot.split(" - ")
             else:
-                # single time, treat as start and calculate end from duration
                 start = slot
-                end = slot  # or handle duration if known
+                end = slot
             self.assertGreaterEqual(start, "07:00")
             self.assertLessEqual(end, "18:30")
+
+    # ------------------------------------------------
+
+    def test_edge_cases(self):
+        """Edge cases: empty calendar, full day busy, invalid duration"""
+        from io_comp.models import Calendar, Event, Person
+        from io_comp.exceptions import InvalidDurationError
+        from datetime import datetime
+
+        # לוח ריק - כל היום פנוי
+        self.repo.get_events_for_participants = lambda p: Calendar([])
+        slots = self.parse(self.app.get_available_slots_json(["Alice"], 60))
+        self.assertEqual(slots, ["07:00 - 18:00"])
+
+        # כל היום תפוס - אין זמן פנוי
+        person = Person("Busy")
+        events = [Event(datetime.strptime("07:00", "%H:%M"), datetime.strptime("19:00", "%H:%M"), "All day", person)]
+        self.repo.get_events_for_participants = lambda p: Calendar(events)
+        slots = self.parse(self.app.get_available_slots_json(["Busy"], 60))
+        self.assertEqual(slots, [])
+
+        # משך 0 זורק שגיאה
+        with self.assertRaises(InvalidDurationError):
+            self.app.get_available_slots_json(["Alice"], 0)
 
 if __name__ == "__main__":
     unittest.main()

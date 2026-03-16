@@ -7,9 +7,19 @@ columns in the order: person_name, event_subject, event_start, event_end
 instances (same-day) and returns a `Calendar`.
 """
 import pandas as pd
-from typing import List
+from typing import List, Protocol, runtime_checkable
 from ..models import Event, Calendar, Person
+from ..exceptions import PersonNotFoundError, CSVLoadError
 from datetime import datetime
+
+
+@runtime_checkable
+class CalendarRepositoryProtocol(Protocol):
+    """Protocol defining the interface for calendar repositories."""
+
+    def get_events_for_participants(self, participants: List[str]) -> Calendar:
+        """Return a Calendar containing events for the given participants."""
+        ...
 
 
 class CalendarRepository:
@@ -33,8 +43,15 @@ class CalendarRepository:
         Returns:
             Calendar: Calendar instance with Event objects parsed from CSV.
         """
-        df = pd.read_csv(self.csv_path, header=None)
+        try:
+            df = pd.read_csv(self.csv_path, header=None)
+        except Exception:
+            raise CSVLoadError(self.csv_path)
         df.columns = ["person_name", "event_subject", "event_start", "event_end"]
+        found = set(df["person_name"].unique())
+        for name in participants:
+            if name not in found:
+                raise PersonNotFoundError(name)
         events = []
         for _, row in df.iterrows():
             if row['person_name'] not in participants:

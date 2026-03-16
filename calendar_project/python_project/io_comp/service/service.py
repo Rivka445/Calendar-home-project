@@ -4,21 +4,22 @@ This module contains the business logic for computing available meeting
 start times given a `Calendar` (a collection of `Event` objects) and a
 requested meeting duration.
 """
+import configparser
+import os
 from datetime import timedelta, datetime
 from typing import List
-from ..models import Calendar, Event
+from ..models import Calendar, Event, Person
+from ..exceptions import InvalidDurationError
+
+_config = configparser.ConfigParser()
+_config.read(os.path.join(os.path.dirname(__file__), "../../resources/config.ini"))
 
 
 class SchedulerService:
-    """Service for scheduling operations on a Calendar instance.
+    """Service for scheduling operations on a Calendar instance."""
 
-    Attributes:
-        WORKDAY_START (str): Default workday start time as HH:MM string.
-        WORKDAY_END (str): Default workday end time as HH:MM string.
-    """
-
-    WORKDAY_START = "07:00"
-    WORKDAY_END = "19:00"
+    WORKDAY_START = _config.get("workday", "start", fallback="07:00")
+    WORKDAY_END = _config.get("workday", "end", fallback="19:00")
 
     def __init__(self, calendar: Calendar):
         """Initialize with a Calendar object.
@@ -41,7 +42,7 @@ class SchedulerService:
         for event in self.calendar.events[1:]:
             last = merged[-1]
             if event.start <= last.end:
-                last.end = max(last.end, event.end)
+                merged[-1] = Event(last.start, max(last.end, event.end), last.subject, last.person)
             else:
                 merged.append(event)
         return merged
@@ -59,10 +60,17 @@ class SchedulerService:
         Returns:
             List[str]: Available ranges formatted as 'HH:MM - HH:MM'.
         """
-        available_ranges = []
+        if meeting_duration.total_seconds() <= 0:
+            raise InvalidDurationError(int(meeting_duration.total_seconds() // 60))
+
         work_start = datetime.strptime(self.WORKDAY_START, "%H:%M")
         work_end = datetime.strptime(self.WORKDAY_END, "%H:%M")
 
+        # Early exit: duration longer than entire workday
+        if meeting_duration > work_end - work_start:
+            return []
+
+        available_ranges = []
         merged_events = self.merge_intervals()
         previous_end = work_start
 
@@ -71,13 +79,14 @@ class SchedulerService:
             gap_end = event.start
             latest_start = gap_end - meeting_duration
             if latest_start >= gap_start:
-                # If the earliest and latest possible start are identical,
-                # present a single start time rather than a range.
                 if latest_start == gap_start:
                     available_ranges.append(f"{gap_start.strftime('%H:%M')}")
                 else:
                     available_ranges.append(f"{gap_start.strftime('%H:%M')} - {latest_start.strftime('%H:%M')}")
             previous_end = max(previous_end, event.end)
+            # Early exit: no time left in workday
+            if previous_end >= work_end:
+                return available_ranges
 
         latest_start = work_end - meeting_duration
         if latest_start >= previous_end:
